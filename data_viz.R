@@ -12,8 +12,15 @@
 rm(list=ls(all=TRUE))
 
 #required packages
-library(tidyverse)
-library(bibliometrix)
+library(cowplot)      #plotting
+library(gridExtra)    #plotting
+library(treemapify)   #plotting
+library(packcircles)  #plotting=
+library(bibliometrix) #bibliography analysis
+library(lubridate)    #date analysis
+library(readxl)       #import xlsx document
+library(tidyverse)    #tidyverse family of packages
+
 
 #Define working directory
 working_dir<-"/nfs/njones-data/Research Projects/JAWRA_Special_Issue/lit_analysis/"
@@ -22,7 +29,6 @@ working_dir<-"/nfs/njones-data/Research Projects/JAWRA_Special_Issue/lit_analysi
 #Step 2:  Wrangle Citaiton Data---------------------------------------------------
 ##################################################################################
 #Import .bib file info (see Bibliometrix vignette: https://cran.r-project.org/web/packages/bibliometrix/vignettes/bibliometrix-vignette.html)
-
 #read .bib file
 bib<-readFiles(paste0(working_dir,"connectivity_lit.bib"))
 
@@ -31,4 +37,193 @@ bib<-convert2df(bib, dbsource = 'isi', format='bibtex')
 
 #create summary
 results <- biblioAnalysis(bib, sep = ";")
-results <- summary(object = results, k=10, pause = F)
+results <- summary(object = results, k=500, pause = F)
+
+#read in manual classification tables
+journals<-read_excel(paste0(working_dir,"classification.xlsx"), sheet="journals")
+key_words<-read_excel(paste0(working_dir,"classification.xlsx"), sheet="key_words")
+hydro_units<-read_excel(paste0(working_dir,"classification.xlsx"), sheet="hydro_units")
+
+##################################################################################
+#Step 3:  Plotting----------------------------------------------------------------
+##################################################################################
+#A) Publication rate over time----------------------------------------------------
+#create tibble of year and # of pubs
+df<-as_tibble(results$AnnualProduction) 
+colnames(df)<-c("year", "pubs")
+df$year<-as.numeric(paste(df$year))
+
+#create exponential model
+model<-lm(log(pubs)~year, df)
+model_data<-tibble(x=df$year, y=exp(fitted(model)))
+
+#create plot
+p1<-df %>%
+  #Start plotting device
+  ggplot(aes(x=year, y=pubs)) +
+  #Add points
+  geom_point(col="grey30") +
+  #Add exp model
+  geom_line(data = model_data, 
+            aes(x, y), 
+            col="grey70",
+            size=1.3,
+            linetype = 2) +
+  #Add text describing model
+  geom_text(aes(x=2003, y=75), label="RSQ=0.94\np<0.001", col="grey30")+
+  #Axis labels
+  labs(x="Year", y = "Number of Publications") +
+  #Add Theme Elements
+  theme_bw(base_size=12) +
+  theme(
+    #bold font for both axis text
+    axis.text=element_text(face="bold"),
+    #set thickness of axis ticks
+    axis.ticks=element_line(size=0.4),
+    #remove plot background
+    plot.background=element_blank()
+  )
+
+#B) Treemap of discpline and journal---------------------------------------------
+#create tibble of journal and number of pubs
+df<-as_tibble(results$MostRelSources) %>%
+  #Rename collumns
+  rename(journal = `Sources       `, pubs=Articles) %>%
+  #format collumns
+  mutate(#trim white space in journal names
+         journal = paste(trimws(journal)), 
+         #make pubs numeric
+         pubs = as.numeric(paste(pubs))
+         ) %>%
+  #Remove journals with <4 citations
+  filter(pubs>3) %>%
+  #left join with journal classification table
+  left_join(.,journals) %>%
+  #redo journal names
+  mutate(journal=str_to_title(journal))
+
+#Create color pallete matrix
+color<- tibble(classification = c("environmental science","hydrology","ecology","biogeochemistry", "earth science"), 
+             org=seq(1,5))
+df<-left_join(df, color) %>% 
+  arrange(org) %>%
+  mutate(color = factor(org))
+
+#Plot tree map
+p2<-ggplot(df, aes(area = pubs, label=journal, subgroup = classification, fill=color)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "white", place = "centre",grow = F, reflow=T) +
+  geom_treemap_subgroup_border(lwd=0.2, col="grey90") +
+  scale_fill_brewer(palette="Set1") +
+  theme_bw() +
+  theme(legend.position="none")
+
+#C) Circle plot of functions-----------------------------------------------------
+#Add unique ID to bib tibble
+bib$UID<-seq(1, nrow(bib))
+
+#Create long-fromat tibble with ID and key word (for both author and ISI defined IDs)
+w1<-tibble(ID = bib$UID, key_word = bib$ID) %>%
+  #create long format
+  separate_rows(., key_word,sep=";") %>%
+  #trim white space
+  mutate(key_word = trimws(paste(key_word)))
+w2<-tibble(ID = bib$UID, key_word = bib$DE) %>%
+  #create long format
+  separate_rows(., key_word,sep=";") %>%
+  #trim white space
+  mutate(key_word = trimws(paste(key_word)))
+w<-bind_rows(w1, w2)
+
+#Estimate number of pubs 
+df<-key_words %>%
+  #format key words tibble
+  select(key_word, class) %>% 
+  filter(str_detect(class, "function")) %>%  
+  #join tibbles [ie journal key words and key word classifications]
+  left_join(w, .) %>% 
+  #select unique combinations of ID and class
+  na.omit(.) %>%
+  select(ID, class) %>%
+  distinct(ID, class) %>%
+  #tally functions represented by different pubs
+  count(class) 
+  
+#Plot (https://www.r-graph-gallery.com/306-custom-circle-packing-with-one-level/)
+#setup plotting layout
+packing<-circleProgressiveLayout(df$n, sizetype = "area")
+df <- cbind(df, packing)
+df.gg<-circleLayoutVertices(packing, npoints = 50)
+df.gg$value=rep(df$class, each=51)
+
+#Format Names for text
+df$class[df$class=="biological function"]<-"Biological"
+df$class[df$class=="chemical function"]<-"Chemical"
+df$class[df$class=="physical function"]<-"Physical"
+
+#plot
+p3<-ggplot() + 
+  #Plot Polygongs
+  geom_polygon(data = df.gg, 
+               aes(x, y, group = id, fill=as.factor(id)), 
+               colour = "black") +
+  scale_fill_manual(values = c("#4daf4a","#e41a1c",  "#377eb8")) +
+  #Add text
+  geom_text(data = df, aes(x, y, label = class), size=4) +
+  geom_text(data = df, aes(x, y, label = paste0("\n\n[n=",n,"]")), size=4) +
+  #theme 
+  theme_void(base_size = 12) + 
+  theme(legend.position="none") +
+  coord_equal()
+
+#D) Lolly-pop plot of hydrologic units------------------------------------------
+#Create tibble of publication counts
+df<-tibble(ID = bib$UID, key_word = bib$ID) %>%
+  #create long format
+  separate_rows(., key_word,sep=";") %>%
+  #trim white space
+  mutate(key_word = trimws(paste(key_word))) %>%
+  #join hydro units classification table
+  left_join(. , hydro_units) %>%
+  #Remove irrelivant key words
+  select(ID, hydro_units) %>%
+  na.omit(.) %>%
+  distinct(.) %>%
+  #Tally hydro units
+  count(hydro_units)
+
+#Change hydro units for display names
+df$hydro_units[df$hydro_units=="Watershed"] <-"Watersheds and Stream Networks"
+df$hydro_units[df$hydro_units=="River"] <-"Rivers and Streams"
+df$hydro_units[df$hydro_units=="Wetland"] <-"Wetlands"
+df$hydro_units[df$hydro_units=="Riparian"] <-"Riparian Zones and Floodplains"
+df$hydro_units[df$hydro_units=="Hillslope"] <-"Critical Zone, Hillslopes, and Soils"
+df$hydro_units[df$hydro_units=="Lake"] <-"Lakes, Reservoirs, and Ponds"
+df$hydro_units[df$hydro_units=="Hyporheic Zone"] <-"Hyporheic Zones"
+
+#preserve order in plot by changing hydro_units to factor
+df<- df %>% 
+  arrange(n) %>%
+  mutate(hydro_units = factor(hydro_units, hydro_units))
+
+#Create plot
+p4<-ggplot(df, aes(x=hydro_units, y=n)) + 
+  #Add lollipops
+  geom_segment(aes(x=hydro_units, xend=hydro_units, y=0, yend=n), color="grey30") +
+  geom_point(col="blue", size=4, alpha=0.8) +
+  #Add lables
+  labs(x="Hydrologic Units", y="Number of Publications")+
+  #Add theme info
+  theme_bw(base_size = 12) +
+  coord_flip() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y =  element_text(margin=margin(l=2), hjust=1)
+  )
+  
+#Export multi plot -------------------------------------------------------------------------------
+plot_grid(p1,p2,p3,p4, nrow = 2, rel_widths = c(1.15,2), rel_heights = c(1.25, 1))
+
+
