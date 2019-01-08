@@ -12,15 +12,14 @@
 rm(list=ls(all=TRUE))
 
 #required packages
+library(tidyverse)    #tidyverse family of packages
 library(cowplot)      #plotting
 library(gridExtra)    #plotting
 library(treemapify)   #plotting
 library(packcircles)  #plotting=
 library(bibliometrix) #bibliography analysis
 library(lubridate)    #date analysis
-library(readxl)       #import xlsx document
-library(tidyverse)    #tidyverse family of packages
-
+library(readxl)       #data import
 
 #Define working directory
 working_dir<-"/nfs/njones-data/Research Projects/JAWRA_Special_Issue/lit_analysis/"
