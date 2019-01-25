@@ -16,7 +16,7 @@ library(tidyverse)    #tidyverse family of packages
 library(cowplot)      #plotting
 library(gridExtra)    #plotting
 library(treemapify)   #plotting
-library(packcircles)  #plotting=
+library(packcircles)  #plotting
 library(bibliometrix) #bibliography analysis
 library(lubridate)    #date analysis
 library(readxl)       #data import
@@ -80,7 +80,9 @@ p1<-df %>%
     #set thickness of axis ticks
     axis.ticks=element_line(size=0.4),
     #remove plot background
-    plot.background=element_blank()
+    plot.background=element_blank(), 
+    #Decrease right margin for final plot
+    plot.margin=unit(c(5.5, 12, 5.5, 5.5), "points")
   )
 
 #B) Treemap of discpline and journal---------------------------------------------
@@ -101,9 +103,25 @@ df<-as_tibble(results$MostRelSources) %>%
   #redo journal names
   mutate(journal=str_to_title(journal))
 
+#Shorten journals that are hard to read on plot
+df$journal[df$journal == "Ecohydrology" ] <- "Eco- hydrology"
+df$journal[df$journal == "Bioscience" ] <- "Bio- science"
+df$journal[df$journal == "Hydrobiologia" ] <- "Hydro- biologia"
+df$journal[df$journal == "Hydrobiologia" ] <- "Hydro- biologia"
+df$journal[df$journal == "Biogeochemistry" ] <- "Biogeo- chemistry"
+df$journal[df$journal == "Canadian Journal Of Fisheries And Aquatic Sciences" ] <- "Can J Fish Aquat Sci"
+df$journal[df$journal == "Science Of The Total Environment"] <- "Sci Total Environ"
+df$journal[df$journal == "Journal Of The American Water Resources Association"] <- "JAWRA"
+df$journal[df$journal == "Journal Of Geophysical Research-Biogeosciences"] <- "JGR-Biogeoscience"
+df$pubs[df$journal=="Freshwater Science"]<-df$pubs[df$journal=="Freshwater Science"]+
+                                            df$pubs[df$journal=="Journal Of The North American Benthological Society"]
+df<-df[df$journal!="Journal Of The North American Benthological Society",]
+df$journal[df$journal == "Transactions Of The American Fisheries Society"] <- "Trans Am Fish Soc"
+
+
 #Create color pallete matrix
 color<- tibble(classification = c("environmental science","hydrology","ecology","biogeochemistry", "earth science"), 
-             org=seq(1,5))
+             org=c(4,2,3,1,5))
 df<-left_join(df, color) %>% 
   arrange(org) %>%
   mutate(color = factor(org))
@@ -168,8 +186,7 @@ p3<-ggplot() +
                colour = "black") +
   scale_fill_manual(values = c("#4daf4a","#e41a1c",  "#377eb8")) +
   #Add text
-  geom_text(data = df, aes(x, y, label = class), size=4) +
-  geom_text(data = df, aes(x, y, label = paste0("\n\n[n=",n,"]")), size=4) +
+  geom_text(data = df, aes(x, y, label = paste0(class,"\n[n=",n,"]"), size=4)) +
   #theme 
   theme_void(base_size = 12) + 
   theme(legend.position="none") +
@@ -223,6 +240,7 @@ p4<-ggplot(df, aes(x=hydro_units, y=n)) +
   )
   
 #Export multi plot -------------------------------------------------------------------------------
-plot_grid(p1,p2,p3,p4, nrow = 2, rel_widths = c(1.15,2), rel_heights = c(1.25, 1))
-
-
+plot_grid(p1,p2,p3,p4, 
+          nrow = 2, rel_widths = c(1.18,2), rel_heights = c(1.25, 1), 
+          labels = c("A)","B)","C)", "D)"), label_size = 11, label_x=c(0,-0.05, 0, -0.05))
+ggsave(paste0(working_dir, "figure1.pdf"), device="pdf", width = 7.07, heigh=4.99, units="in")
