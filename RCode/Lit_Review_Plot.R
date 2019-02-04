@@ -13,23 +13,23 @@ rm(list=ls(all=TRUE))
 
 #required packages
 library(tidyverse)    #tidyverse family of packages
+library(lubridate)    #for handling dates
+library(readxl)       #for importing data from MS Excel 
+library(bibliometrix) #bibliography analysis
 library(cowplot)      #plotting
 library(gridExtra)    #plotting
 library(treemapify)   #plotting
 library(packcircles)  #plotting
-library(bibliometrix) #bibliography analysis
-library(lubridate)    #date analysis
-library(readxl)       #data import
 
-#Define working directory
-working_dir<-"/nfs/njones-data/Research Projects/JAWRA_Special_Issue/lit_analysis/"
+#Define data directory
+data_dir<-"data/"
 
 ##################################################################################
 #Step 2:  Wrangle Citaiton Data---------------------------------------------------
 ##################################################################################
 #Import .bib file info (see Bibliometrix vignette: https://cran.r-project.org/web/packages/bibliometrix/vignettes/bibliometrix-vignette.html)
 #read .bib file
-bib<-readFiles(paste0(working_dir,"connectivity_lit.bib"))
+bib<-readFiles(paste0(data_dir,"connectivity_lit.bib"))
 
 #Convert to df
 bib<-convert2df(bib, dbsource = 'isi', format='bibtex')
@@ -39,9 +39,9 @@ results <- biblioAnalysis(bib, sep = ";")
 results <- summary(object = results, k=500, pause = F)
 
 #read in manual classification tables
-journals<-read_excel(paste0(working_dir,"classification.xlsx"), sheet="journals")
-key_words<-read_excel(paste0(working_dir,"classification.xlsx"), sheet="key_words")
-hydro_units<-read_excel(paste0(working_dir,"classification.xlsx"), sheet="hydro_units")
+journals<-read_excel(paste0(data_dir,"classification.xlsx"), sheet="journals")
+key_words<-read_excel(paste0(data_dir,"classification.xlsx"), sheet="key_words")
+hydro_units<-read_excel(paste0(data_dir,"classification.xlsx"), sheet="hydro_units")
 
 ##################################################################################
 #Step 3:  Plotting----------------------------------------------------------------
@@ -117,7 +117,6 @@ df$pubs[df$journal=="Freshwater Science"]<-df$pubs[df$journal=="Freshwater Scien
                                             df$pubs[df$journal=="Journal Of The North American Benthological Society"]
 df<-df[df$journal!="Journal Of The North American Benthological Society",]
 df$journal[df$journal == "Transactions Of The American Fisheries Society"] <- "Trans Am Fish Soc"
-
 
 #Create color pallete matrix
 color<- tibble(classification = c("environmental science","hydrology","ecology","biogeochemistry", "earth science"), 
@@ -240,7 +239,12 @@ p4<-ggplot(df, aes(x=hydro_units, y=n)) +
   )
   
 #Export multi plot -------------------------------------------------------------------------------
-plot_grid(p1,p2,p3,p4, 
-          nrow = 2, rel_widths = c(1.18,2), rel_heights = c(1.25, 1), 
-          labels = c("A)","B)","C)", "D)"), label_size = 11, label_x=c(0,-0.05, 0, -0.05))
-ggsave(paste0(working_dir, "figure1.pdf"), device="pdf", width = 7.07, heigh=4.99, units="in")
+ggdraw()+
+  draw_plot(p1, x=0.05,   y=0.5, width =0.55, height =0.5) +
+  draw_plot(p3, x=0.6, y=0.5, width =0.4, height =0.5) +
+  draw_plot(p4, x=0.05,   y=0,   width =0.9, height =0.5) +
+  draw_plot_label(c("A)", "B)", "C)"), 
+                  x=c(0,0.6, 0), 
+                  y=c(1,1,0.5), 
+                  size=12)
+ggsave("figure1.pdf", device="pdf", width = 6, height= 4.5, units="in")
